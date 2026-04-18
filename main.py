@@ -16,6 +16,7 @@ import logging
 import os
 import time
 from contextlib import suppress
+from pathlib import Path
 from typing import Dict, Optional
 
 from aiogram import Bot, Dispatcher, F, Router
@@ -23,7 +24,7 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from aiogram.types import FSInputFile, KeyboardButton, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from dotenv import load_dotenv
 
 # =========================
@@ -79,6 +80,14 @@ BTN_GET_GUIDE = "Получить гайд"
 
 CTA_CHOICES = [BTN_PROJECT_REVIEW, BTN_GET_GUIDE]
 POST_REVIEW_CHOICES = [BTN_GET_GUIDE, "/start"]
+
+# PDF гайда (лежит рядом с main.py; на Railway файл должен быть в репозитории)
+GUIDE_PDF_FILENAME = "Почему твою музыку забывают.pdf"
+GUIDE_INTRO_TEXT = (
+    "Отправляю гайд:\n"
+    "«Почему твою музыку забывают за неделю и как это изменить?»"
+)
+GUIDE_DOCUMENT_CAPTION = "«Почему твою музыку забывают за неделю и как это изменить?»"
 
 # Follow-up delay (10 минут)
 FOLLOW_UP_DELAY_SECONDS = 600
@@ -191,6 +200,41 @@ def touch_user_activity(message: Message) -> None:
     )
 
 
+def guide_pdf_path() -> Path:
+    """Абсолютный путь к PDF гайда в папке бота."""
+    return Path(__file__).resolve().parent / GUIDE_PDF_FILENAME
+
+
+def is_guide_keyword(text: str | None) -> bool:
+    """Слово «ГАЙД» в любом регистре, с опциональными пробелами по краям."""
+    if text is None:
+        return False
+    return text.strip().casefold() == "гайд"
+
+
+async def send_guide_pdf(message: Message, state: FSMContext) -> None:
+    """
+    Отправляет пользователю PDF гайда и сбрасывает FSM.
+    Одна точка входа для кнопки «Получить гайд», слова «ГАЙД» и CTA.
+    """
+    pdf = guide_pdf_path()
+    if not pdf.is_file():
+        logger.error("Guide PDF not found at %s", pdf)
+        await message.answer(
+            "Гайд сейчас не открывается: файла нет на сервере.\n"
+            "Проверь, что PDF лежит рядом с ботом и попал в деплой (git + Railway)."
+        )
+        await state.clear()
+        return
+
+    await message.answer(GUIDE_INTRO_TEXT)
+    await message.answer_document(
+        FSInputFile(pdf, filename=GUIDE_PDF_FILENAME),
+        caption=GUIDE_DOCUMENT_CAPTION,
+    )
+    await state.clear()
+
+
 # =========================
 # Handlers: /start
 # =========================
@@ -218,6 +262,25 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         start_text,
         reply_markup=make_keyboard(START_CHOICES),
     )
+
+
+# =========================
+# Handlers: ключевое слово «ГАЙД» (в любом состоянии FSM)
+# Регистрируем сразу после /start, чтобы перехватывать до шагов анкеты.
+# =========================
+
+
+@router.message(lambda m: is_guide_keyword(m.text))
+async def handle_guide_keyword(message: Message, state: FSMContext) -> None:
+    """Пользователь пишет «ГАЙД» — отправляем PDF."""
+    if not message.from_user:
+        return
+
+    if is_fast_duplicate(message.from_user.id, message.text or ""):
+        return
+
+    touch_user_activity(message)
+    await send_guide_pdf(message, state)
 
 
 # =========================
@@ -326,7 +389,7 @@ async def handle_cta_review(message: Message, state: FSMContext) -> None:
 
 @router.message(EchoWaveStates.choosing_cta, F.text == BTN_GET_GUIDE)
 async def handle_cta_guide(message: Message, state: FSMContext) -> None:
-    """Отправка гайда (заглушка-ссылка)."""
+    """CTA: отправка PDF гайда."""
     if not message.from_user or not message.text:
         return
 
@@ -336,15 +399,7 @@ async def handle_cta_guide(message: Message, state: FSMContext) -> None:
     touch_user_activity(message)
 
     await state.update_data(cta=BTN_GET_GUIDE)
-
-    await message.answer(
-        "Отправляю гайд:\n"
-        "«Почему твою музыку забывают за неделю и как это изменить?»\n\n"
-        "Ссылка: https://example.com/echowave-guide"
-    )
-
-    # Сценарий завершен; состояние можно очистить.
-    await state.clear()
+    await send_guide_pdf(message, state)
 
 
 @router.message(EchoWaveStates.choosing_cta)
@@ -435,8 +490,7 @@ async def review_goal_step(message: Message, state: FSMContext) -> None:
 @router.message(F.text == BTN_GET_GUIDE)
 async def handle_guide_anywhere(message: Message, state: FSMContext) -> None:
     """
-    Универсальная отправка гайда:
-    работает и после анкеты, и из любого другого места сценария.
+    Кнопка «Получить гайд» вне шага choosing_cta (например после анкеты).
     """
     if not message.from_user or not message.text:
         return
@@ -446,12 +500,7 @@ async def handle_guide_anywhere(message: Message, state: FSMContext) -> None:
 
     touch_user_activity(message)
 
-    await message.answer(
-        "Отправляю гайд:\n"
-        "«Почему твою музыку забывают за неделю и как это изменить?»\n\n"
-        "Ссылка: https://example.com/echowave-guide"
-    )
-    await state.clear()
+    await send_guide_pdf(message, state)
 
 
 # =========================
