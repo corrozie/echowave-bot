@@ -83,11 +83,7 @@ POST_REVIEW_CHOICES = [BTN_GET_GUIDE, "/start"]
 
 # PDF гайда (лежит рядом с main.py; на Railway файл должен быть в репозитории)
 GUIDE_PDF_FILENAME = "Почему твою музыку забывают.pdf"
-GUIDE_INTRO_TEXT = (
-    "Отправляю гайд:\n"
-    "«Почему твою музыку забывают за неделю и как это изменить?»"
-)
-GUIDE_DOCUMENT_CAPTION = "«Почему твою музыку забывают за неделю и как это изменить?»"
+GUIDE_INTRO_TEXT = "Отправляю гайд."
 
 # Follow-up delay (10 минут)
 FOLLOW_UP_DELAY_SECONDS = 600
@@ -228,10 +224,7 @@ async def send_guide_pdf(message: Message, state: FSMContext) -> None:
         return
 
     await message.answer(GUIDE_INTRO_TEXT)
-    await message.answer_document(
-        FSInputFile(pdf, filename=GUIDE_PDF_FILENAME),
-        caption=GUIDE_DOCUMENT_CAPTION,
-    )
+    await message.answer_document(FSInputFile(pdf, filename=GUIDE_PDF_FILENAME))
     await state.clear()
 
 
