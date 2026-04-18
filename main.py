@@ -78,6 +78,7 @@ BTN_PROJECT_REVIEW = "Разбор проекта"
 BTN_GET_GUIDE = "Получить гайд"
 
 CTA_CHOICES = [BTN_PROJECT_REVIEW, BTN_GET_GUIDE]
+POST_REVIEW_CHOICES = [BTN_GET_GUIDE, "/start"]
 
 # Follow-up delay (10 минут)
 FOLLOW_UP_DELAY_SECONDS = 600
@@ -422,7 +423,34 @@ async def review_goal_step(message: Message, state: FSMContext) -> None:
         "Передаю продюсеру EchoWave.\n"
         "С тобой свяжутся."
     )
+    await message.answer(
+        "Пока ждёшь ответ, могу отправить гайд.\n"
+        "Или можешь перезапустить сценарий.",
+        reply_markup=make_keyboard(POST_REVIEW_CHOICES),
+    )
 
+    await state.clear()
+
+
+@router.message(F.text == BTN_GET_GUIDE)
+async def handle_guide_anywhere(message: Message, state: FSMContext) -> None:
+    """
+    Универсальная отправка гайда:
+    работает и после анкеты, и из любого другого места сценария.
+    """
+    if not message.from_user or not message.text:
+        return
+
+    if is_fast_duplicate(message.from_user.id, message.text):
+        return
+
+    touch_user_activity(message)
+
+    await message.answer(
+        "Отправляю гайд:\n"
+        "«Почему твою музыку забывают за неделю и как это изменить?»\n\n"
+        "Ссылка: https://example.com/echowave-guide"
+    )
     await state.clear()
 
 
